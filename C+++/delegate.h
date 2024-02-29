@@ -128,7 +128,7 @@ namespace cst {
 	private:
 		
 		std::list<func_type> func_list_;
-		std::map<unsigned, std::list<iterator*> > erase_map_;
+
 
 		std::priority_queue<
 			unit<unsigned,iterator>,
