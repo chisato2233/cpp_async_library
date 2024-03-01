@@ -145,7 +145,10 @@
     <ClInclude Include="macro.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\doc\awaiter.md" />
+    <None Include="..\doc\co_task.md" />
     <None Include="..\doc\delegate.md" />
+    <None Include="..\doc\runtime.md" />
     <None Include="..\README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -31,15 +31,16 @@ namespace cst {
 	template<class Re, class... Args>
 	struct _delegate_impl  {
 		using func_type= std::function<Re(Args...)>;
-		using iterator = typename std::list<func_type>::iterator;
-		using const_iterator = typename std::list<func_type>::const_iterator;
+		_delegate_impl() = default;
+		~_delegate_impl() = default;
 
 		// 
-		auto begin()const noexcept { return func_list_.begin(); }
-		auto end()const noexcept { return func_list_.end(); }
-		void empty()const noexcept { return func_list_.empty(); }
+		/*auto begin()const noexcept { return func_map_.begin(); }
+		auto end()const noexcept { return func_map_.end(); }*/
+
+		bool empty()const noexcept { return func_map_.empty(); }
 		bool is_frozen()const noexcept { return is_frozen_; }
-		size_t size()const noexcept { return func_list_.size(); }
+		size_t size()const noexcept { return func_map_.size(); }
 
 		auto on_call() noexcept->_delegate_impl<void,Args...>& {
 			enable_call_next = true;
@@ -48,24 +49,13 @@ namespace cst {
 			return *next_delegate_;
 		}
 
-
-		void push_back(const func_type& f) { func_list_.push_back(f); }
-		void push_back(func_type&& f) { func_list_.push_back(std::move(f)); }
-
-		void push_front(const func_type& f) { func_list_.push_front(f); }
-		void push_front(func_type&& f) { func_list_.push_front(std::move(f)); }
-
-		void insert(const_iterator it, func_type&& f) { func_list_.insert(it, f); }
-
-		auto emplace_back(func_type&& f) { return func_list_.emplace_back(std::move(f)); }
-		auto emplace_front(func_type&& f){return func_list_.emplace_front(std::move(f));}
-
-		auto erase(const_iterator it) { return func_list_.erase(it); }
-		auto erase(const_iterator begin, const_iterator end) { return func_list_.erase(begin, end); }
-		auto erase_all() { erase(begin(), end()); }
-		void delay_erase(const_iterator it, unsigned call_count = 1) {
-			erase_queue_.push({call_count,  it });
+		auto add(func_type&& f) {
+			func_map_.insert({ ++next_func_id_, std::move(f) });
+			return next_func_id_ - 1;
 		}
+
+		auto remove(uint64_t id) { func_map_.erase(id); }
+		auto clear() { func_map_.clear(); }
 
 		void freeze() { is_frozen_ = true; }
 		void unfreeze() { is_frozen_ = false; }
@@ -77,12 +67,20 @@ namespace cst {
 				return delegate_result<Re>::null();
 
 			_update_erase_queue();
-			return _for_each_call(std::forward<Args>(args)...);
+			return _call_next(std::forward<Args>(args)...),_for_each_call(std::forward<Args>(args)...);
 		}
 
 
+		auto operator +=(func_type&& f) {
+			add(std::move(f));
+			return *this;
+		}
 
-		
+		auto operator -=(uint64_t id) {
+			remove(id);
+			return *this;
+		}
+
 		auto operator()(Args&&... args) {
 			return call_all(std::forward<Args>(args)...);
 		}
@@ -95,30 +93,33 @@ namespace cst {
 	private:
 		auto _for_each_call(Args&&... args) -> typename delegate_result<Re>::type {
 			if constexpr (std::is_same_v<Re, void>) {
-				for (auto i : *this)
-					std::invoke(i, std::forward<Args>(args)...);
+				for (auto& [_,f] : func_map_)
+					std::invoke(f, std::forward<Args>(args)...);
 				return;
 			}
 			else {
 				std::vector<opt<Re>> res;
-				for (auto i : *this)
+				for (auto& [_,f] : func_map_)
 					res.emplace_back(opt<Re>{
-					std::invoke(i, std::forward<Args>(args)...)
+					std::invoke(f, std::forward<Args>(args)...)
 				});
 				return res;
 			}
+			
 		}
 
 		auto _update_erase_queue() {
-			while(!erase_queue_.empty() && call_count_ >= erase_queue_.top()) {
-				erase(erase_queue_.top());
-				erase_queue_.pop();
-			}
+			//while(!erase_queue_.empty() && call_count_ >= erase_queue_.top().index) {
+			//	erase(std::get<0>(erase_queue_.top().value));
+			//	erase_queue_.pop();
+			//}
 		}
 
-		auto _call_next() {
+		auto _call_next(Args&&... args) {
 			if(next_delegate_ && enable_call_next) {
-				next_delegate_->call_all();
+				next_delegate_->call_all(std::forward<Args>(args)...);
+				if (next_delegate_->empty())
+					enable_call_next = false, next_delegate_ = nullptr;
 			}
 		}
 
@@ -127,18 +128,18 @@ namespace cst {
 		bool enable_call_next = false;
 	private:
 		
-		std::list<func_type> func_list_;
+		std::map<uint64_t,func_type> func_map_;
+		uint64_t next_func_id_ = 0;
 
-
-		std::priority_queue<
-			unit<unsigned,iterator>,
-			std::vector<unit<unsigned,iterator>>,
-			std::greater<>
-		> erase_queue_;
+		//std::priority_queue<
+		//	unit<unsigned,iterator>,
+		//	std::vector<unit<unsigned,iterator>>,
+		//	std::greater<>
+		//> erase_queue_;
 
 		unsigned int call_count_ = 0;
 		bool is_frozen_ = false;
-		uptr<_delegate_impl<void, Args...>> next_delegate_ = nullptr;
+		_delegate_impl<void, Args...>* next_delegate_ = nullptr;
 	};
 
 

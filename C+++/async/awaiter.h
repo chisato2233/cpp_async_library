@@ -28,11 +28,14 @@ namespace cst::async{
 		bool await_ready() const { return delegate_->empty(); }
 		template<class P>
 		void await_suspend(std::coroutine_handle<P> caller) {
-			runtime* rt = caller.promise().runtime_ref;
-			rt->suspend_task(caller.promise().id);
+			auto rt = caller.promise().runtime_ref;
+			auto tk = caller.promise().get_task();
 
-			delegate_->on_call().push_back([rt, tk = caller.promise().task_ref]{
+			rt->suspend_task(tk.get());
+
+			auto id = delegate_->on_call().add([=,tk = caller.promise().get_task()] {
 				rt->resume_task(tk);
+				delegate_ -= id;
 			});
 		}
 
@@ -43,17 +46,20 @@ namespace cst::async{
 
 	//wait and call the predicate every frame until it return true
 	struct wait_until {
-		static void await_resume(){}
 		auto await_ready() const-> bool { return predicate(); }
+
+		void await_resume() {
+
+		}
 
 		template<class P>
 		void await_suspend(std::coroutine_handle<P> caller) {
 			auto rt = caller.promise().runtime_ref;
-			auto tk = caller.promise().task_ref;
-			rt->suspend_task(tk);
+			auto tk = caller.promise().get_task();
+			rt->suspend_task(tk.get());
 
 			rt->register_task([](auto rt,auto tk)->co_task<> {
-				if(tk) rt->resume_task(tk);
+				if(tk) rt->resume_task(tk.get());
 				co_return;
 			}(rt,tk)).add_predicate(predicate);
 		}
@@ -69,13 +75,13 @@ namespace cst::async{
 		template<class P>
 		void await_suspend(std::coroutine_handle<P> caller) {
 			auto rt = caller.promise().runtime_ref;
-			auto tk = caller.promise().id;
-			rt->suspend_task(tk);
+			auto tk = caller.promise().get_task();
+			rt->suspend_task(tk.get());
 
 			rt->register_task([](auto rt, auto tk)->co_task<> {
-				if (tk) rt->resume_task(tk);
+				if (tk) rt->resume_task(tk.get());
 				co_return;
-			}(rt, tk)) .add_predicate([&]() {
+			}(rt, tk)).add_predicate([&]() {
 				return !predicate();
 			});
 		}
@@ -84,8 +90,13 @@ namespace cst::async{
 	};
 
 
-	template<class Rep,class Period = std::ratio<1>>
+	template<class Rep ,class Period = std::ratio<1>>
 	struct wait_time {
+		wait_time(std::chrono::duration<Rep,Period> time):time(time){}
+		wait_time(int time):time(std::chrono::seconds(time)){}
+		wait_time(double time):time(std::chrono::duration<double>{time}){}
+
+
 		auto await_resume() { return time; }
 
 		auto await_ready()const->bool {return false;}
@@ -93,16 +104,38 @@ namespace cst::async{
 		template<class P>
 		auto await_suspend(std::coroutine_handle<P> caller) {
 			auto rt = caller.promise().runtime_ref;
-			auto tk = caller.promise().task_ref;
+			auto tk = caller.promise().get_task();
 
-			rt->suspend_task(tk);
-			rt->register_task([](auto rt,auto tk)->co_task<> {
-				if(tk) rt->resume_task(tk);
+			rt->suspend_task(tk.get());
+			auto task = rt->register_task([](auto rt,auto tk)->co_task<> {
+				if(tk) rt->resume_task(tk.get());
 				co_return;
 			}(rt,tk)).add_timer(time);
+
+			//auto id = task->task_id();
+			//caller.promise().on_stop.push_back([rt,id](auto&&...) {
+			//	rt->stop_task(id);
+			//});
+
+			//caller.promise().on_done.push_back([rt,id](auto&&...) {
+			//	rt->cancel_task(id);
+			//});
+
+			// fd
+			// caller -> lambda
+			// caller -> lambda
+			//sdaf
+			// fdsf
+
+
+
 		}
 		std::chrono::duration<Rep,Period> time;
 	};
+
+	wait_time(int) -> wait_time<int>;
+	wait_time(double) -> wait_time<double>;
+	
 
 	struct wait_next_frame {
 		wait_next_frame(unsigned count = 1):count_(count){}
@@ -113,9 +146,19 @@ namespace cst::async{
 		template<class P>
 		auto await_suspend(std::coroutine_handle<P> caller) {
 			auto rt = caller.promise().runtime_ref;
-			auto tk = caller.promise().task_ref;
-			rt->suspend_task(tk);
-			rt->resume_task(tk);
+			auto tk = caller.promise().get_task();
+			rt->suspend_task(tk.get());
+			if (count_ == 1) rt->resume_task(tk.get());
+			else {
+				rt->start_task([](auto rt, auto tk, auto count) ->co_task<> {
+					while(--count) {
+						co_await wait_next_frame{};
+					}
+					rt->resume_task(tk.get());
+					co_return;
+				}(rt, tk, count_));
+				
+			} 
 		}
 	private:
 		unsigned count_ = 1;

@@ -1,57 +1,70 @@
 #include"cst_async.h"
+#include "cst_async.h"
+#include <iostream>
 
 using namespace cst;
-delegate<void(int)> te;
-int cnt;
 
-auto test(int i)->async::co_task<> {
-	
-	std::cout << i << '\n';
-	cnt++;
-	if(i<=1) 
-		co_await test(i + 1);
-	co_return;
+
+// 定义一个协程函数，每帧加载协程
+auto loadFrame() -> async::co_task<> {
+    while (true) {
+        
+        std::cout << '>';
+        co_await async::wait_next_frame{10000}; //等待接下来的一万帧
+    }
 }
 
-void test_coro() {
-	timer::start();
-	auto runtime = std::make_unique<async::runtime>();
+// 定义一个协程函数，每秒打印数字 1到10
+auto printNumbers() -> async::co_task<> {
+    for (int i = 0; i <= 10; ++i) {
+        co_await async::wait_time{1}; // 等待下一秒
+        std::cout << i << '\n';
 
-	runtime->start_task(test(0)).on_done().push_back([](auto&&...) {std::cout << "done"; });
-
-	while (cnt<=100 || runtime->task_count()!=0) {
-		timer::update();
-		runtime->update();
-	}
+    }
+    co_return; // 结束协程
 }
 
-struct thread_test {
-	void test(int i) {
-		;
-		thread_test t{};
-		std::cout << i << '\n';
-		if(i<=10000) {
-			std::thread(&thread_test::test, &t,i+1).join();
-		}
-		
-	}
 
-};
-
-
-void test_thread() {
-	std::condition_variable on_exit;
-	std::mutex mm;
-	std::unique_lock l{ mm };
-
-	thread_test t{};
-	std::thread(&thread_test::test, &t, 0).join();
+//主协程
+auto mainCorotine(async::runtime* rt) -> async::co_task<> {
+    // 启动加载帧协程,然后保存协程的引用
+    auto& update = rt->start_task(loadFrame());
+    // 等待打印数字协程结束
+    co_await printNumbers();
+    //关闭加载帧协程
+    rt->stop_task(update.get_ref());
+    co_return;
 }
 
 int main() {
-	
-	test_coro();
-	std::cout << timer::now();
+    // 创建运行时环境
+    auto runtime = std::make_unique<async::runtime>();
+    //启动计时器
+	timer::start();
+
+    // 启动协程
+    runtime->start_task(mainCorotine(runtime.get()));
+
+    // 运行时更新循环，直到所有协程完成
+    while (runtime->task_count() != 0) {
+        
+    	runtime->update(); // 更新运行时状态，推进协程执行
+    }
+
+    return 0;
 }
 
 
+/* 结果:
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>0
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>1
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>2
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>3
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>4
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>5
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>6
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>7
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>8
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>9
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>10
+ */

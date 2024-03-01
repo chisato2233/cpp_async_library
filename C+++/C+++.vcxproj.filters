@@ -27,28 +27,37 @@
     <ClInclude Include="async\co_task.h">
       <Filter>Header Files\async</Filter>
     </ClInclude>
-    <ClInclude Include="async\promise_base.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="async\runtime.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="macro.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="async\timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="async\awaiter.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="cst_async.h">
-      <Filter>Header Files</Filter>
+      <Filter>Header Files\async</Filter>
+    </ClInclude>
+    <ClInclude Include="async\awaiter.h">
+      <Filter>Header Files\async</Filter>
+    </ClInclude>
+    <ClInclude Include="async\runtime.h">
+      <Filter>Header Files\async</Filter>
+    </ClInclude>
+    <ClInclude Include="async\promise_base.h">
+      <Filter>Header Files\async</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md" />
     <None Include="..\doc\delegate.md">
+      <Filter>doc</Filter>
+    </None>
+    <None Include="..\doc\co_task.md">
+      <Filter>doc</Filter>
+    </None>
+    <None Include="..\doc\runtime.md">
+      <Filter>doc</Filter>
+    </None>
+    <None Include="..\doc\awaiter.md">
       <Filter>doc</Filter>
     </None>
   </ItemGroup>
