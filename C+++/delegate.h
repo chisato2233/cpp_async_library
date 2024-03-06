@@ -29,14 +29,13 @@ namespace cst {
 	}
 
 	template<class Re, class... Args>
-	struct _delegate_impl  {
+	struct _delegate_impl : no_copy  {
 		using func_type= std::function<Re(Args...)>;
-		_delegate_impl() = default;
-		~_delegate_impl() = default;
-
 		// 
 		/*auto begin()const noexcept { return func_map_.begin(); }
 		auto end()const noexcept { return func_map_.end(); }*/
+
+		_delegate_impl() = default;
 
 		bool empty()const noexcept { return func_map_.empty(); }
 		bool is_frozen()const noexcept { return is_frozen_; }
@@ -54,7 +53,13 @@ namespace cst {
 			return next_func_id_ - 1;
 		}
 
+
 		auto remove(uint64_t id) { func_map_.erase(id); }
+
+		auto delay_remove(uint64_t id,int count = 1) {
+			erase_queue_.emplace(count + call_count_,id );
+		}
+
 		auto clear() { func_map_.clear(); }
 
 		void freeze() { is_frozen_ = true; }
@@ -71,12 +76,12 @@ namespace cst {
 		}
 
 
-		auto operator +=(func_type&& f) {
+		auto& operator +=(func_type&& f) {
 			add(std::move(f));
 			return *this;
 		}
 
-		auto operator -=(uint64_t id) {
+		auto& operator -=(uint64_t id) {
 			remove(id);
 			return *this;
 		}
@@ -109,10 +114,10 @@ namespace cst {
 		}
 
 		auto _update_erase_queue() {
-			//while(!erase_queue_.empty() && call_count_ >= erase_queue_.top().index) {
-			//	erase(std::get<0>(erase_queue_.top().value));
-			//	erase_queue_.pop();
-			//}
+			while(!erase_queue_.empty() && call_count_<= erase_queue_.top().index) {
+				func_map_.erase(erase_queue_.top().get<0>());
+				erase_queue_.pop();
+			}
 		}
 
 		auto _call_next(Args&&... args) {
@@ -129,17 +134,19 @@ namespace cst {
 	private:
 		
 		std::map<uint64_t,func_type> func_map_;
+
+		std::priority_queue <
+			unit<unsigned, uint64_t>,
+			std::vector<unit<unsigned, uint64_t>>,
+			std::greater<>
+		> erase_queue_;
+
 		uint64_t next_func_id_ = 0;
 
-		//std::priority_queue<
-		//	unit<unsigned,iterator>,
-		//	std::vector<unit<unsigned,iterator>>,
-		//	std::greater<>
-		//> erase_queue_;
 
 		unsigned int call_count_ = 0;
 		bool is_frozen_ = false;
-		_delegate_impl<void, Args...>* next_delegate_ = nullptr;
+		uptr<_delegate_impl<void, Args...>> next_delegate_ = nullptr;
 	};
 
 
@@ -174,7 +181,7 @@ namespace cst {
 
 
 
-	template<class Fx>
+	template<class Fx> 
 	struct delegate<Fx> :_get_delegate_impl<Fx>::type {
 		explicit operator bool() const { return !this->empty(); }
 
@@ -196,5 +203,5 @@ namespace cst {
 	};
 
 	delegate()->delegate<void()>;
-
+	
 }

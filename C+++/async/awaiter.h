@@ -24,7 +24,11 @@ namespace cst::async{
 	struct _delegate_awaiter {
 
 		_delegate_awaiter(_delegate_impl<Re,Args...>* delegate_ptr) :delegate_{delegate_ptr}{}
-		static void await_resume() {}
+
+		auto await_resume()noexcept -> std::tuple<Args...> {
+			return std::move(args_);
+		}
+
 		bool await_ready() const { return delegate_->empty(); }
 		template<class P>
 		void await_suspend(std::coroutine_handle<P> caller) {
@@ -33,14 +37,16 @@ namespace cst::async{
 
 			rt->suspend_task(tk.get());
 
-			auto id = delegate_->on_call().add([=,tk = caller.promise().get_task()] {
-				rt->resume_task(tk);
-				delegate_ -= id;
+			auto id = delegate_->on_call().add( [=,this](auto&&... values){
+				rt->resume_task(tk.get());
+				args_ = std::make_tuple(std::forward<decltype(values)>(values)...);
 			});
+			delegate_->on_call().delay_remove(id);
 		}
 
 	private:
 		_delegate_impl<Re, Args...>* delegate_ = nullptr;
+		std::tuple<Args...> args_;
 	};
 
 
