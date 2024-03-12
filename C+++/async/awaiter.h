@@ -5,19 +5,109 @@
 
 namespace cst::async{
 
+	template<class Awa> concept _no_suspend_awaitable = requires(Awa a) {
+		{a.await_ready()} -> std::convertible_to<bool>;
+		{a.await_resume()};
+	};
+
+	template<class Awa> concept awaitable = _no_suspend_awaitable<Awa> && requires (Awa a) {
+		{ a.await_suspend(std::declval<std::coroutine_handle<>>()) };
+	};
+
+	template<class Awa> concept standard_awaitable = _no_suspend_awaitable<Awa> && requires(Awa a) {
+		{ a.await_suspend(std::declval<std::coroutine_handle<task_promise_base>>()) };
+	};
+
+	
+
 	//dynamic suspend
 	struct suspend {
 		bool await_resume()const noexcept { return is_suspend; }
 		bool await_ready()const { return !is_suspend; }
 
-		template<class P>
+		template<standard_promise P>
 		void await_suspend(std::coroutine_handle<P> caller)const  {
-			caller.promise().runtime_ref->suspend_task(caller.promise().task_ref);
+			auto rt = caller.promise().runtime_ref;
+			auto tk = caller.promise().get_task();
+			rt->suspend_task(tk.get());
 		}
 
 		bool is_suspend = true;
 	};
 
+	struct _multi_awaiter_tag{};
+	template<class T>
+	concept multi_awaitable =	standard_awaitable<T> && 
+								std::is_base_of_v<_multi_awaiter_tag, T>;
+
+	template<standard_awaitable... A> struct multi_awaiter : _multi_awaiter_tag{
+
+		multi_awaiter(A&&... args) :args_(std::forward_as_tuple(args...)) {
+			  
+		}
+
+		std::tuple<A...> await_resume() {
+			return std::move(args_);
+		}
+
+		bool await_ready()const {
+			return (std::get<A>(args_).await_ready() && ...);
+		}
+
+		template<standard_promise P>
+		void await_suspend(std::coroutine_handle<P> caller) {
+			auto rt = caller.promise().runtime_ref;
+			auto tk = caller.promise().get_task();
+			rt->suspend_task(tk.get());
+
+			auto id = rt->register_task([](auto rt, auto tk, auto args) -> co_task<> {
+				if (tk) rt->resume_task(tk.get());
+				co_return;
+			}(rt, tk, args_)).add_awaiter(std::get<A>(args_)...);
+		}
+
+		std::tuple<A...> args_;
+	};
+
+
+	
+	template<standard_awaitable A, standard_awaitable... B,size_t... Index>
+	auto _create_multi_awaiter(A&& awaiter,multi_awaiter<B...>&& other_multi,std::index_sequence<Index...> Ins) {
+		return multi_awaiter<A, B...> {
+			std::forward<A>(awaiter),
+			std::forward<B>(std::get<Index>(other_multi.args_))...
+		};
+	}
+
+	template<standard_awaitable A, standard_awaitable... B,size_t... Index>
+	auto _create_multi_awaiter(multi_awaiter<B...>&& other_multi, A&& awaiter,std::index_sequence<Index...> Ins) {
+		return multi_awaiter<B...,A> {
+			std::forward<B>(std::get<Index>(other_multi.args_))...,
+			std::forward<A>(awaiter)
+		};
+	}
+
+	template<standard_awaitable A,standard_awaitable... B>
+	constexpr auto operator||(A a,multi_awaiter<B...> b) {
+		return _create_multi_awaiter(a,b,std::index_sequence_for<B...>{});
+	}
+
+	template<standard_awaitable A,standard_awaitable... B>
+	constexpr auto operator||(multi_awaiter<B...>&& b,A&& a) {
+		return _create_multi_awaiter(
+			std::forward<multi_awaiter<B...>>(b),
+			std::forward<A>(a),
+			std::index_sequence_for<B...>{}
+		);
+	}. 
+
+	template<standard_awaitable A,standard_awaitable B>
+		requires
+		!std::is_base_of_v<_multi_awaiter_tag,A>&&
+		!std::is_base_of_v<_multi_awaiter_tag,B>
+	constexpr auto operator||(A&& a,B&& b) {
+		return multi_awaiter<A, B>{std::forward<A>(a), std::forward<B>(b)};
+	}
 
 
 	template<class Re, class... Args>
@@ -118,23 +208,6 @@ namespace cst::async{
 				co_return;
 			}(rt,tk)).add_timer(time);
 
-			//auto id = task->task_id();
-			//caller.promise().on_stop.push_back([rt,id](auto&&...) {
-			//	rt->stop_task(id);
-			//});
-
-			//caller.promise().on_done.push_back([rt,id](auto&&...) {
-			//	rt->cancel_task(id);
-			//});
-
-			// fd
-			// caller -> lambda
-			// caller -> lambda
-			//sdaf
-			// fdsf
-
-
-
 		}
 		std::chrono::duration<Rep,Period> time;
 	};
@@ -149,7 +222,7 @@ namespace cst::async{
 		unsigned await_resume() const{ return count_; }
 		auto await_ready()const->bool { return count_ == 0; }
 
-		template<class P>
+		template<standard_promise P>
 		auto await_suspend(std::coroutine_handle<P> caller) {
 			auto rt = caller.promise().runtime_ref;
 			auto tk = caller.promise().get_task();

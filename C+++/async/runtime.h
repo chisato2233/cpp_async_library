@@ -200,7 +200,6 @@ namespace cst::async {
 				const auto task = this_task_queue_.front();
 				if (task) {
 					auto state = task->task_state();
-					auto id = task->task_id();
 
 					state == task_state::ready ? task->resume() :
 					state == task_state::suspend ? suspend_task(task):
@@ -309,11 +308,11 @@ namespace cst::async {
 		rt->cancel_task(task);
 	}
 
-	inline ptr<co_task_base> task_promise_base::get_task() const noexcept {
+	inline  auto task_promise_base::get_task()const noexcept-> ptr<co_task_base> {
 		if (!runtime_ref) return nullptr;
 
 		auto it = runtime_ref->task_map.find(id);
-		if (it!=runtime_ref->task_map.end()) {
+		if (it != runtime_ref->task_map.end()) {
 			return it->second;
 		}
 		return nullptr;

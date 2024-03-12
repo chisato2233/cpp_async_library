@@ -30,12 +30,13 @@ namespace cst {
 
 	template<class Re, class... Args>
 	struct _delegate_impl : no_copy  {
+		_delegate_impl() = default;
+
 		using func_type= std::function<Re(Args...)>;
-		// 
 		/*auto begin()const noexcept { return func_map_.begin(); }
 		auto end()const noexcept { return func_map_.end(); }*/
 
-		_delegate_impl() = default;
+		
 
 		bool empty()const noexcept { return func_map_.empty(); }
 		bool is_frozen()const noexcept { return is_frozen_; }
@@ -86,7 +87,7 @@ namespace cst {
 			return *this;
 		}
 
-		auto operator()(Args&&... args) {
+		auto operator()(Args... args) {
 			return call_all(std::forward<Args>(args)...);
 		}
 
@@ -183,8 +184,8 @@ namespace cst {
 
 	template<class Fx> 
 	struct delegate<Fx> :_get_delegate_impl<Fx>::type {
+		delegate() = default;
 		explicit operator bool() const { return !this->empty(); }
-
 	};
 
 
@@ -203,5 +204,5 @@ namespace cst {
 	};
 
 	delegate()->delegate<void()>;
-	
+	template<class Obj, class Fx> delegate(Obj*) -> delegate<Obj, Fx>;
 }

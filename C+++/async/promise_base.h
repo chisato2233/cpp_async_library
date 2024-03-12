@@ -30,4 +30,7 @@ namespace cst::async {
 	private:
 		inline static std::uint64_t _next_task_id = 0;
 	};
+
+
+	template<class P> concept standard_promise = std::derived_from<P, task_promise_base>;
 };

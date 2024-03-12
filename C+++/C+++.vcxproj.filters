@@ -45,6 +45,12 @@
     <ClInclude Include="async\promise_base.h">
       <Filter>Header Files\async</Filter>
     </ClInclude>
+    <ClInclude Include="signal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="damage.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md" />

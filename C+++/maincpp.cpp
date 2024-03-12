@@ -2,6 +2,7 @@
 #include "cst_async.h"
 #include <iostream>
 #include<ranges>
+#include"signal.h"
 
 using namespace cst;
 
@@ -10,59 +11,63 @@ using namespace cst;
 
 
 
-void test() {
-    using namespace std;
 
-}
 
 
 
 
 delegate<void()> tees;
-// ¶¨ÒåÒ»¸öĞ­³Ìº¯Êı£¬Ã¿Ö¡¼ÓÔØĞ­³Ì
+// å®šä¹‰ä¸€ä¸ªåç¨‹å‡½æ•°ï¼Œæ¯å¸§åŠ è½½åç¨‹
 auto loadFrame() -> async::co_task<> {
     while (true) {
         co_await tees;
         std::cout << '>';
-        co_await async::wait_next_frame{10000}; //µÈ´ı½ÓÏÂÀ´µÄÒ»ÍòÖ¡
+        co_await async::wait_next_frame{10000}; //ç­‰å¾…æ¥ä¸‹æ¥çš„ä¸€ä¸‡å¸§
     }
 }
 
-// ¶¨ÒåÒ»¸öĞ­³Ìº¯Êı£¬Ã¿Ãë´òÓ¡Êı×Ö 1µ½10
+// å®šä¹‰ä¸€ä¸ªåç¨‹å‡½æ•°ï¼Œæ¯ç§’æ‰“å°æ•°å­— 1åˆ°10
 auto printNumbers() -> async::co_task<> {
     for (int i = 0; i <= 10; ++i) {
-        co_await async::wait_time{1}; // µÈ´ıÏÂÒ»Ãë
+        co_await async::wait_time{1}; // ç­‰å¾…ä¸‹ä¸€ç§’
         std::cout << i << '\n';
 
     }
-    co_return; // ½áÊøĞ­³Ì
+    co_return; // ç»“æŸåç¨‹
 }
 
 
-//Ö÷Ğ­³Ì
+//ä¸»åç¨‹
 auto mainCorotine(async::runtime* rt) -> async::co_task<> {
-    // Æô¶¯¼ÓÔØÖ¡Ğ­³Ì,È»ºó±£´æĞ­³ÌµÄÒıÓÃ
+    using namespace async;
+
+    std::cout << "dasd";
+    auto i = suspend{};
+   auto a = i || wait_next_frame{} || wait_time{1.0};
+    
+
+    // å¯åŠ¨åŠ è½½å¸§åç¨‹,ç„¶åä¿å­˜åç¨‹çš„å¼•ç”¨
     auto& update = rt->start_task(loadFrame());
-    // µÈ´ı´òÓ¡Êı×ÖĞ­³Ì½áÊø
+    // ç­‰å¾…æ‰“å°æ•°å­—åç¨‹ç»“æŸ
     co_await printNumbers();
-    //¹Ø±Õ¼ÓÔØÖ¡Ğ­³Ì
+    //å…³é—­åŠ è½½å¸§åç¨‹
     rt->stop_task(update.get_ref());
     co_return;
 }
 
 int main() {
-    // ´´½¨ÔËĞĞÊ±»·¾³
+    // åˆ›å»ºè¿è¡Œæ—¶ç¯å¢ƒ
     auto runtime = std::make_unique<async::runtime>();
-    //Æô¶¯¼ÆÊ±Æ÷
+    //å¯åŠ¨è®¡æ—¶å™¨
 	timer::start();
 
-    // Æô¶¯Ğ­³Ì
+    // å¯åŠ¨åç¨‹
     runtime->start_task(mainCorotine(runtime.get()));
-
-    // ÔËĞĞÊ±¸üĞÂÑ­»·£¬Ö±µ½ËùÓĞĞ­³ÌÍê³É
+    test_signal();
+    // è¿è¡Œæ—¶æ›´æ–°å¾ªç¯ï¼Œç›´åˆ°æ‰€æœ‰åç¨‹å®Œæˆ
     while (runtime->task_count() != 0) {
         
-    	runtime->update(); // ¸üĞÂÔËĞĞÊ±×´Ì¬£¬ÍÆ½øĞ­³ÌÖ´ĞĞ
+    	runtime->update(); // æ›´æ–°è¿è¡Œæ—¶çŠ¶æ€ï¼Œæ¨è¿›åç¨‹æ‰§è¡Œ
     }
 
     return 0;

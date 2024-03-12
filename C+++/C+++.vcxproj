@@ -140,9 +140,11 @@
     <ClInclude Include="async\promise_base.h" />
     <ClInclude Include="async\timer.h" />
     <ClInclude Include="cst_async.h" />
+    <ClInclude Include="damage.h" />
     <ClInclude Include="delegate.h" />
     <ClInclude Include="async\runtime.h" />
     <ClInclude Include="macro.h" />
+    <ClInclude Include="signal.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\doc\awaiter.md" />
