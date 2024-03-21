@@ -75,6 +75,7 @@ namespace cst::async {
 		//do not use the capture of lambda to create a task, it will cause a dangling pointer
 		template<class T>
 		auto start_task(co_task<T>&& task) -> co_task<T>&{
+			std::cout << std::format("call runtime start task{}\n", task.task_id());
 			co_task_base* task_ref;
 			if (!task.has_runtime()) {
 				task_ref = register_task(std::move(task)).task_ref.get();
@@ -88,22 +89,25 @@ namespace cst::async {
 
 		//registrite (if it doesn't) and start a task by task id 
 		//do not use the capture of lambda to create a task, it will cause a dangling pointer
-		auto start_task(uint64_t id) -> co_task_base* {
+		auto start_task(uint64_t id) -> ptr<co_task_base> {
 			auto res = task_map.find(id);
 			if (res == task_map.end()) return nullptr;
 
 			_start_task_from_point(res->second.get());
-			return res->second.get();
+			return res->second;
 		}
 
 		//stop a task by point;
 		//please 
 		void stop_task(co_task_base* task) {
 			if (!task) return;
+			std::cout << std::format("call runtime stop task{}\n", task->task_id());
+
 			auto& state = task->task_state();
 			if (state == task_state::suspend)
 				suspend_list_.remove(task);
 			state = task_state::stop;
+			task->on_stop()();
 			stop_queue_.emplace(task->task_id(), task);
 		}
 
@@ -118,7 +122,7 @@ namespace cst::async {
 
 		//suspend a task by point
 		void suspend_task(co_task_base* task) {
-			if (!task||task->task_state()==task_state::suspend)		
+			if (!task || task->task_state() == task_state::stop || task->task_state() == task_state::suspend)
 				return;
 
 			task->task_state() = task_state::suspend;
@@ -135,9 +139,10 @@ namespace cst::async {
 		//resume a task by point
 		//if the task is not suspend, it will do nothing
 		void resume_task(co_task_base* task) {
+			
 			if (!task) return;
+			suspend_list_.remove(task);
 			if(task->task_state() == task_state::suspend) {
-				suspend_list_.remove(task);
 				_start_task_from_point(task);
 			}
 		}
@@ -181,8 +186,8 @@ namespace cst::async {
 		}
 
 		void _start_task_from_point(co_task_base* task_ref) {
-			task_ref->task_state() = task_state::ready;
 			
+			task_ref->task_state() = task_state::ready;
 			_get_task_queue().push(task_ref);
 		}
 
@@ -235,10 +240,9 @@ namespace cst::async {
 		void _update_stop_task() {
 			while (!stop_queue_.empty()) {
 				const auto it = task_map.find(stop_queue_.front().index);
-				if (it != task_map.end())
-					it->second->on_stop()();
-
-				task_map.erase(it);
+				if (it != task_map.end()) {
+					task_map.erase(it);
+				}
 				stop_queue_.pop();
 			}
 
@@ -248,8 +252,10 @@ namespace cst::async {
 			while (!timer_queue_.empty() && timer_queue_.top().index <= timer::now()) {
 				const auto [id, task] = timer_queue_.top().value;
 				timer_queue_.pop();
-				if (task_map.contains(id))
+				if (task_map.contains(id)) {
+					std::cout << std::format("add time task [{}]\n", id);
 					_start_task_from_point(task);
+				}
 			}
 		}
 
@@ -288,7 +294,9 @@ namespace cst::async {
 			std::vector<unit<game_time_point,uint64_t,co_task_base*>>,
 			std::greater<>
 		> timer_queue_;
+		
 	};
+
 
 	template <class T>
 	inline void _builtin_call_runtime_start_task(runtime* rt, co_task<T>&& task) {
@@ -308,6 +316,7 @@ namespace cst::async {
 		rt->cancel_task(task);
 	}
 
+
 	inline  auto task_promise_base::get_task()const noexcept-> ptr<co_task_base> {
 		if (!runtime_ref) return nullptr;
 
@@ -317,5 +326,31 @@ namespace cst::async {
 		}
 		return nullptr;
 	}
+
+	inline auto co_task_base::derived_task(standard_task auto&& task,derived_task_option option)->ptr<co_task_base> {
+		auto promise = this->get_promise();
+		auto& list =  promise->derived_task_list;
+		
+		auto rt = promise->runtime_ref;
+
+		if (!rt) return nullptr;
+
+		rt->suspend_task(this);
+
+		
+		auto& task_ref = rt->start_task(std::move(task));
+		auto task_ptr = task_ref.get_promise()->get_task();
+
+		list.push_back({ task_ptr->task_id(),task_ptr});
+
+		task_ptr->on_done() += [rt,promise](auto&&...) {
+			rt->resume_task(promise->get_task().get());
+		};
+
+		return task_ptr;
+	}
+
+
+
 }
 

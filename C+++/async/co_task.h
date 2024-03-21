@@ -1,26 +1,44 @@
 #pragma once
 #include<coroutine>
+#include <format>
 #include <future>
 
 #include"../delegate.h"
 #include"promise_base.h"
+#include "runtime.h"
 
 
 namespace cst::async{
 	template<class T >struct co_task;
+	template<class T> struct _co_task_awaiter;
+
+
+	inline namespace concepts {
+		template<class Task> concept standard_task = std::derived_from<std::remove_cvref_t<Task>, struct co_task_base>;
+	}
+
 
 	template<class T>
-	inline void _builtin_call_runtime_start_task(runtime*,co_task<T>&& task);
-	inline void _builtin_call_runtime_stop_task(runtime*,co_task_base* task);
-	inline void _builtin_call_runtime_suspend_task(runtime*,co_task_base* task);
-	inline void _builtin_call_runtime_resume_task(runtime*,co_task_base* task);
-	inline void _builtin_call_runtime_cancel_task(runtime*,co_task_base* task);
+	void _builtin_call_runtime_start_task(runtime*, co_task<T>&& task);
+	void _builtin_call_runtime_stop_task(runtime*, co_task_base* task);
+	void _builtin_call_runtime_suspend_task(runtime*, co_task_base* task);
+	void _builtin_call_runtime_resume_task(runtime*, co_task_base* task);
+	void _builtin_call_runtime_cancel_task(runtime*, co_task_base* task);
+
+
 
 	struct co_task_base {
 		co_task_base(task_promise_base* base = nullptr): promise_base_(base) {
 			if(promise_base_) {
 				promise_base_->task_ref = this;
 			}
+
+			on_stop() += [](task_promise_base* self) {
+				for(auto i:self->derived_task_list) {
+					_builtin_call_runtime_stop_task(self->runtime_ref, i.get<0>().get());
+				}
+				self->derived_task_list.clear();
+			};
 		}
 
 		virtual ~co_task_base() = default;
@@ -47,29 +65,43 @@ namespace cst::async{
 		auto get_runtime() const noexcept->runtime& { return *promise_base_->runtime_ref; }
 		auto bind_runtime(runtime* new_runtime)noexcept { promise_base_->runtime_ref = new_runtime; }
 		auto has_runtime()const noexcept { return promise_base_->runtime_ref != nullptr; }
+
+		struct derived_task_option {
+			bool is_start_task = true;
+			bool is_suspend_caller = true;
+			std::function<bool()> weather_stop = [] {return true; };
+			
+		};
+		ptr<co_task_base> derived_task(standard_task auto&& task,derived_task_option option = {});
+
 	private:
 		task_promise_base* promise_base_;
-
+		
 	};
 
-	template<class T>
-	struct _co_task_promise_res {
-		T return_value() {
-			return std::move(val_);
-		}
-	private:
-		T val_;
-	};
-	template<>struct _co_task_promise_res<void>{
-		constexpr void return_void() {}
-	};
+	
 
-	template<class T>
-	struct _select_awaiter_return_type {
-		using type = T;
-	};
+	inline namespace details  {
+		template<class T>
+		struct _co_task_promise_res {
+			T return_value() {
+				return std::move(val_);
+			}
+		private:
+			T val_;
+		};
+		template<>struct _co_task_promise_res<void> {
+			constexpr void return_void() {}
+		};
 
-	template<> struct _select_awaiter_return_type<void> { using type = void; };
+		template<class T>
+		struct _select_awaiter_return_type {
+			using type = T;
+		};
+
+		template<> struct _select_awaiter_return_type<void> { using type = void; };
+	}
+
 
 	template<class T = void>
 	struct co_task : co_task_base {
@@ -79,6 +111,8 @@ namespace cst::async{
 			template<typename... Args>  promise_type(Args&&...) {}
 			template<typename Obj, typename... Args> promise_type(Obj&& obj, Args&&...) {  }
 
+
+
 			auto get_return_object() noexcept -> co_task {
 				return  co_task{ std::coroutine_handle<promise_type>::from_promise(*this) };
 				//res.promise_base = static_cast<task_promise_base*>(this);
@@ -87,11 +121,12 @@ namespace cst::async{
 
 			constexpr auto initial_suspend() noexcept {return std::suspend_always{};}
 			auto final_suspend() noexcept {
+				std::cout << std::format("task {} done", id);
 				on_done();
 				_builtin_call_runtime_stop_task(runtime_ref, task_ref);
 				return std::suspend_always{};
 			}
-			static auto unhandled_exception() { std::terminate(); }
+			auto unhandled_exception() { exception = std::current_exception(); }
 
 			auto promise_transform(std::suspend_always) {
 				if(runtime_ref && task_ref) {
@@ -101,7 +136,7 @@ namespace cst::async{
 			}
 			~promise_type() = default;
 		public:
-			
+			std::exception_ptr exception;
 
 
 		};
@@ -129,72 +164,26 @@ namespace cst::async{
 			if (handle_ && !handle_.done()) {
 				on_resume()();
 				handle_();
+				if(handle_.promise().exception)
+					std::rethrow_exception(handle_.promise().exception);
 			}
 		}
 
 		void operator()() { resume(); }
 		bool done()override { return handle_.done(); }
-		void destroy()override {
-			handle_.destroy();
-		}
+		void destroy()override { handle_.destroy(); }
 
 		auto get_coroutine_handle() const noexcept-> co_handle { return handle_; }
 		auto get_ref() noexcept->co_task_base* { return reinterpret_cast<co_task_base*>(this); }
-
-		
+	
 
 		//operator co_await-----------------------------------------------------------------------------------
-		auto operator co_await() {
-			struct _ {
-				co_task* this_task;
-				
-				bool await_ready()const noexcept { return !this_task || this_task->done(); }
-
-				void await_suspend(std::coroutine_handle<promise_type> caller) {
-					auto rt = caller.promise().runtime_ref;
-					_builtin_call_runtime_suspend_task(rt, caller.promise().task_ref);
-					auto caller_task = caller.promise().get_task();
-					this_task->on_done() += [caller_task, rt](auto...) {
-						_builtin_call_runtime_resume_task(rt, caller_task.get());
-					};
-
-					if (rt && !this_task->has_runtime()) 
-						_builtin_call_runtime_start_task(rt, std::move(*this_task));
-					
-				}
-
-				T await_resume() {
-					if constexpr(std::is_same_v<void,T>) {
-						return this_task->get_coroutine_handle().promise().return_void();
-					}
-					else {
-						return this_task->get_coroutine_handle().promise().return_value();
-					}
-				}
-			};
-
-			return _{.this_task = this};
-		}
+		auto operator co_await() { return _co_task_awaiter<T>{.this_task = this}; }
 
 	private:
 		
 		co_handle handle_;
 	};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

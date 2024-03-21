@@ -145,6 +145,8 @@
     <ClInclude Include="async\runtime.h" />
     <ClInclude Include="macro.h" />
     <ClInclude Include="signal.h" />
+    <ClInclude Include="tuple_dynamic.h" />
+    <ClInclude Include="type_list.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\doc\awaiter.md" />

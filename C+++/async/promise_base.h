@@ -27,6 +27,7 @@ namespace cst::async {
 		delegate<task_promise_base, void()> on_resume{ this };
 		delegate<task_promise_base, void()> on_stop{ this };
 		delegate<task_promise_base, void()> on_done{ this };
+		std::list<unit<uint64_t, ptr<co_task_base>>> derived_task_list;
 	private:
 		inline static std::uint64_t _next_task_id = 0;
 	};

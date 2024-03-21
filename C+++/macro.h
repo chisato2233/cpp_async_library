@@ -2,6 +2,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace cst {
 	template<class T> using opt  = std::optional<T>;
@@ -97,6 +98,7 @@ namespace cst {
 		Index index;
 		std::tuple<Source...> value;
 	};
-	
+
+
 
 }
