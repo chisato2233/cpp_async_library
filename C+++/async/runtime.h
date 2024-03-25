@@ -335,14 +335,17 @@ namespace cst::async {
 
 		if (!rt) return nullptr;
 
-		rt->suspend_task(this);
+		if(option.is_suspend_caller)[[likely]]
+			rt->suspend_task(this);
 
 		
 		auto& task_ref = rt->start_task(std::move(task));
 		auto task_ptr = task_ref.get_promise()->get_task();
 
-		list.push_back({ task_ptr->task_id(),task_ptr});
+		if(option.is_stop_task)[[likely]]
+			list.push_back({ task_ptr->task_id(),task_ptr});
 
+		if(option.is_resume_caller)[[likely]]
 		task_ptr->on_done() += [rt,promise](auto&&...) {
 			rt->resume_task(promise->get_task().get());
 		};

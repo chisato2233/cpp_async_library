@@ -17,7 +17,7 @@ auto loadFrame() -> async::co_task<> {
     while (true) {
         co_await tees;
         std::cout << '>';
-        co_await async::wait_next_frame{100000}; //等待接下来的一万帧
+        co_await async::wait_next_frame{2000000}; //等待接下来的一万帧
     }
 }
 
@@ -41,17 +41,18 @@ auto mainCorotine(async::runtime* rt) -> async::co_task<> {
 
     // 启动加载帧协程,然后保存协程的引用
     auto& update = rt->start_task(loadFrame());
-
+    
     // 等待打印数字协程结束
-    co_await (printNumbers()||wait_time{3.0});
-
-
+    //co_await(printNumbers() || wait_time{ 3.0 });
+    co_await(wait_time{ 3.0 } && wait_next_frame{});
+    std::cout << "\n\n\n stop!!!!!!!\n\n\n";
     //关闭加载帧协程
     rt->stop_task(update.get_ref());
     co_return;
 }
 
 int main() {
+    
     // 创建运行时环境
     auto runtime = std::make_unique<async::runtime>();
     //启动计时器

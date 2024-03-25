@@ -68,9 +68,9 @@ namespace cst::async{
 
 		struct derived_task_option {
 			bool is_start_task = true;
+			bool is_stop_task = true;
 			bool is_suspend_caller = true;
-			std::function<bool()> weather_stop = [] {return true; };
-			
+			bool is_resume_caller = true;
 		};
 		ptr<co_task_base> derived_task(standard_task auto&& task,derived_task_option option = {});
 
