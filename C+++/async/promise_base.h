@@ -8,7 +8,8 @@ namespace cst::async {
 		prepared,
 		ready,
 		suspend,
-		stop
+		stop,
+		forbidden
 	};
 
 	struct task_promise_base {

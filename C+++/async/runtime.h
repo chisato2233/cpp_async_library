@@ -4,7 +4,7 @@
 #include <array>
 #include <functional>
 #include <map>
-
+#include<set>
 #include"../macro.h"
 #include "co_task.h"
 #include"timer.h"
@@ -59,7 +59,7 @@ namespace cst::async {
 			auto id = task_ref->task_id();
 			auto state = task_ref->task_state();
 			if(state == task_state::suspend) 
-				suspend_list_.remove(task_ref);
+				suspend_set_.erase(task_ref);
 
 			task_map.erase(id);
 			
@@ -105,7 +105,11 @@ namespace cst::async {
 
 			auto& state = task->task_state();
 			if (state == task_state::suspend)
-				suspend_list_.remove(task);
+				suspend_set_.erase(task);
+
+			else if (state == task_state::forbidden)
+				forbidden_set_.erase(task);
+
 			state = task_state::stop;
 			task->on_stop()();
 			stop_queue_.emplace(task->task_id(), task);
@@ -126,7 +130,7 @@ namespace cst::async {
 				return;
 
 			task->task_state() = task_state::suspend;
-			suspend_list_.push_back(task);
+			suspend_set_.insert(task);
 		}
 
 		//suspend a task by id
@@ -139,9 +143,9 @@ namespace cst::async {
 		//resume a task by point
 		//if the task is not suspend, it will do nothing
 		void resume_task(co_task_base* task) {
-			
 			if (!task) return;
-			suspend_list_.remove(task);
+
+			suspend_set_.erase(task);
 			if(task->task_state() == task_state::suspend) {
 				_start_task_from_point(task);
 			}
@@ -154,6 +158,25 @@ namespace cst::async {
 			if (res == task_map.end()) return;
 			resume_task(res->second.get());
 		} 
+
+		void forbid_task(co_task_base* task) {
+			if (!task || task->task_state() == task_state::stop || task->task_state() == task_state::suspend)
+				return;
+			task->task_state() = task_state::forbidden;
+			forbidden_set_.insert(task);
+
+		}
+
+		void allow_task(co_task_base* task) {
+			if (!task) return;
+
+			forbidden_set_.erase(task);
+			if (task->task_state() == task_state::forbidden) {
+				_start_task_from_point(task);
+			}
+		}
+
+		
 
 		void update() {
 
@@ -168,6 +191,11 @@ namespace cst::async {
 
 			//update suspend queue-------------------------------------------------------------
 			_update_suspend_task();
+
+
+			//update forbidden queue----------------------------------------------------------
+			_update_forbidden_task();
+
 
 			//update stop queue---------------------------------------------------------------
 			_update_stop_task();
@@ -209,6 +237,7 @@ namespace cst::async {
 					state == task_state::ready ? task->resume() :
 					state == task_state::suspend ? suspend_task(task):
 					state == task_state::stop ? stop_task(task) :
+					state == task_state::forbidden? forbid_task(task):
 					[]{}();
 				}
 				this_task_queue_.pop();
@@ -216,25 +245,33 @@ namespace cst::async {
 		}
 
 		void _update_suspend_task() {
-			[[likely]]if (!enable_check_suspend_list) return;
+			[[likely]]if (!enable_check_suspend_set) return;
 
-			for (auto it = suspend_list_.begin(); it != suspend_list_.end(); ++it) {
+			for (auto it = suspend_set_.begin(); it != suspend_set_.end(); ++it) {
 				bool is_clear = false;
 				task_state state;
 				if (*it) {
 					state = (*it)->task_state();
 					auto id = (*it)->task_id();
+					is_clear = 
+						state == task_state::ready ? resume_task(*it), true :
+						state == task_state::suspend ? false :
+						state == task_state::stop ? stop_task(*it), true :
+					false;
 
-					state == task_state::ready ? resume_task(*it), is_clear = true :
-					state == task_state::suspend ? is_clear = false :
-					state == task_state::stop ? stop_task(*it), is_clear = true
-						: false;
 				}
 				else is_clear = true;
 
 				if (is_clear)
-					suspend_list_.erase(it);
+					suspend_set_.erase(it);
 			}
+		}
+
+		void _update_forbidden_task() {
+			[[likely]] if (!enable_check_forbidden_set) return;
+			//暂时没有实现
+			return;
+
 		}
 
 		void _update_stop_task() {
@@ -278,15 +315,18 @@ namespace cst::async {
 		inline static constexpr int task_queue_num = 2;
 		std::map<uint64_t , ptr<co_task_base>> task_map;
 		std::queue<ptr<co_task_base>> cancel_queue;
-		bool enable_check_suspend_list = false;
+
+		bool enable_check_suspend_set = false;
+		bool enable_check_forbidden_set = false;
 	private:
-		inline static int task_queue_flag_ = 0;
+		char task_queue_flag_ = 0;
 		inline static uint64_t next_predicate_id_ = 0;
 
 		std::array<std::queue<co_task_base*>,task_queue_num> task_queue_array_;
 		std::queue<unit<uint64_t,co_task_base*>> stop_queue_;
 
-		std::list<co_task_base*> suspend_list_;
+		std::set<co_task_base*> suspend_set_;
+		std::set<co_task_base*> forbidden_set_;
 
 		std::unordered_map <uint64_t, unit<uint64_t,std::function<bool()>,co_task_base*>> predicate_map_;
 		std::priority_queue<

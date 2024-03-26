@@ -19,9 +19,6 @@
     <Filter Include="doc">
       <UniqueIdentifier>{b0cab6c3-3ebb-4b45-8d3b-3e61939ca74d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\async\awaiters">
-      <UniqueIdentifier>{ece6887c-b80c-4116-b9e5-c0374b481823}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="delegate.h">
